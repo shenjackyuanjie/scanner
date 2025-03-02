@@ -23,4 +23,7 @@ pub struct CliArg {
     /// 对比文件路径
     #[arg(short = 'c', long = "compare", default_value = "check.src")]
     pub compare: String,
+    /// 超时时间 (默认 1s)
+    #[arg(short = 'o', long = "timeout", default_value_t = 1)]
+    pub timeout: u64,
 }

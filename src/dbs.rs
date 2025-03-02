@@ -119,19 +119,24 @@ impl CoreDb {
     /// 从 src 表中获取 n 个 ip, 并将这 n 个 ip 从 src 表中删除
     pub fn get_n_ip(&self, n: usize) -> rusqlite::Result<Vec<String>> {
         let mut stmt = self.db.prepare("SELECT ip FROM src LIMIT ?")?;
+
+        let tx = self.db.unchecked_transaction()?;
         let mut rows = stmt.query([&n])?;
 
-        let mut ips = Vec::new();
+        let mut ips = Vec::with_capacity(n);
         while let Some(row) = rows.next()? {
             ips.push(row.get(0)?);
         }
 
+        tx.commit()?;
         event!(Level::DEBUG, "获取到 {} 个 ip", ips.len());
 
         Ok(ips)
     }
 
     /// 获取所有的 ip
+    ///
+    /// 然后删掉 src 表中的所有数据
     pub fn get_all_ip(&self) -> rusqlite::Result<Vec<String>> {
         let mut stmt = self.db.prepare("SELECT ip FROM src")?;
         let mut rows = stmt.query([])?;
@@ -141,6 +146,8 @@ impl CoreDb {
             ips.push(row.get(0)?);
         }
 
+        let _ = self.db.execute("DELETE FROM src", []);
+
         event!(Level::DEBUG, "获取到 {} 个 ip", ips.len());
 
         Ok(ips)
@@ -148,6 +155,7 @@ impl CoreDb {
 
     /// 添加一些失败的 ip
     pub fn add_faild_ip(&self, ips: &[String]) -> rusqlite::Result<()> {
+        let tx = self.db.unchecked_transaction()?;
         let mut stmt = self.db.prepare("INSERT INTO faild (ip) VALUES (?)")?;
 
         for ip in ips.iter() {
@@ -155,12 +163,13 @@ impl CoreDb {
         }
 
         event!(Level::DEBUG, "添加了 {} 个失败的 ip", ips.len());
-
+        tx.commit()?;
         Ok(())
     }
 
     /// 添加一些成功的 ip
     pub fn add_success_ip(&self, ips: &[(String, bool, bool)]) -> rusqlite::Result<()> {
+        let tx = self.db.unchecked_transaction()?;
         let mut stmt = self
             .db
             .prepare("INSERT INTO success (ip, http_ok, https_ok) VALUES (?, ?, ?)")?;
@@ -170,7 +179,7 @@ impl CoreDb {
         }
 
         event!(Level::DEBUG, "添加了 {} 个成功的 ip", ips.len());
-
+        tx.commit()?;
         Ok(())
     }
 
@@ -203,6 +212,7 @@ impl CoreDb {
 
     /// 导入 ip
     pub fn import_ips(&self, ips: Vec<String>) -> rusqlite::Result<()> {
+        let tx = self.db.unchecked_transaction()?;
         let mut stmt = self.db.prepare("INSERT INTO src (ip) VALUES (?) ")?;
 
         for ip in ips.iter() {
@@ -211,6 +221,7 @@ impl CoreDb {
             }
         }
 
+        tx.commit()?;
         event!(Level::INFO, "添加了 {} 个 ip", ips.len());
 
         Ok(())

@@ -1,4 +1,8 @@
-use std::{net::SocketAddr, path::Path, time::Duration};
+use std::{
+    net::{Ipv4Addr, SocketAddr},
+    path::Path,
+    time::Duration,
+};
 
 use blake3::Hash;
 use tracing::{Level, event};
@@ -17,6 +21,7 @@ pub async fn scan_ip(
     src: String,
     path: String,
     right_hash: Hash,
+    timeout: Duration,
 ) -> anyhow::Result<(bool, bool)> {
     let mut port_80 = ip;
     port_80.set_port(80);
@@ -25,7 +30,7 @@ pub async fn scan_ip(
 
     let client = reqwest::ClientBuilder::new()
         .resolve_to_addrs(&src, &[port_80, port_443])
-        .timeout(Duration::from_secs(10))
+        .timeout(timeout)
         .build()?;
 
     match client.get(format!("https://{}/{}", src, path)).send().await {
@@ -52,7 +57,7 @@ pub async fn scan_ip(
             }
         }
     }
-
+    println!("{} faild", ip);
     Ok((false, false))
 }
 
@@ -137,18 +142,23 @@ pub async fn work(args: CliArg) -> anyhow::Result<()> {
         todo_count - before_add_count
     );
 
-    let (root_url, path) = match args.url.split_once('/') {
-        Some((root, path)) => {
-            // 处理掉 http:// 或者 https://
-            let root = root.split_once("//").unwrap().1;
-            (root.to_string(), path.to_string())
+    let (root_url, path) = {
+        let url = args.url.clone();
+        let mut url = url.split_once("://").unwrap().1;
+        let mut path = "";
+        if let Some((root, p)) = url.split_once('/') {
+            url = root;
+            path = p;
         }
-        None => (args.url.clone(), "".to_string()),
+        (url.to_string(), path.to_string())
     };
+
+    let mut worker_count = 0_usize;
+    let timeout = Duration::from_secs(args.timeout);
 
     if batch_size > todo_count {
         let ips = db.get_all_ip()?;
-        let result = worker(&ips, root_url, path, right_hash).await;
+        let result = worker(&ips, root_url, path, right_hash, timeout).await;
         db.update_ips(&result)?;
     } else {
         let mut pool = Vec::with_capacity(args.threads);
@@ -157,8 +167,11 @@ pub async fn work(args: CliArg) -> anyhow::Result<()> {
                 let scan_ip = db.get_n_ip(args.max_ip_count.min(db.count_src()?))?;
                 let root_url = root_url.clone();
                 let path = path.clone();
-                let handle =
-                    tokio::spawn(async move { worker(&scan_ip, root_url, path, right_hash).await });
+                let handle = tokio::spawn(async move {
+                    worker(&scan_ip, root_url, path, right_hash, timeout).await
+                });
+                worker_count += 1;
+                event!(Level::INFO, "开始 worker {}", worker_count);
                 pool.push(handle);
             } else {
                 let handle = pool.remove(0);
@@ -180,18 +193,20 @@ pub async fn worker(
     root_url: String,
     path: String,
     right_hash: Hash,
+    timeout: Duration,
 ) -> Vec<(String, bool, bool)> {
     let mut result = Vec::new();
 
     for ip in ips.iter() {
-        let socket: SocketAddr = match ip.parse() {
+        let socket: Ipv4Addr = match ip.parse() {
             Ok(ip) => ip,
             Err(e) => {
                 event!(Level::ERROR, "解析 ip 地址失败: {:?}", e);
                 continue;
             }
         };
-        match scan_ip(socket, root_url.clone(), path.clone(), right_hash).await {
+        let socket = SocketAddr::new(socket.into(), 0);
+        match scan_ip(socket, root_url.clone(), path.clone(), right_hash, timeout).await {
             Ok((https, http)) => {
                 result.push((ip.clone(), https, http));
             }
