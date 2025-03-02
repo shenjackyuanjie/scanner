@@ -173,7 +173,22 @@ pub async fn work(args: CliArg) -> anyhow::Result<()> {
                 worker_count += 1;
                 event!(Level::INFO, "开始 worker {}", worker_count);
                 pool.push(handle);
+                tokio::time::sleep(Duration::from_millis(200)).await;
             } else {
+                let mut i = 0;
+                while i < pool.len() {
+                    if !pool[i].is_finished() {
+                        i += 1;
+                    } else {
+                        let handle = pool.remove(i);
+                        let result = handle.await?;
+                        event!(Level::INFO, "扫描了 {} 个 ip", result.len());
+                        db.update_ips(&result)?;
+                    }
+                }
+                if i != 0 {
+                    continue;
+                }
                 let handle = pool.remove(0);
                 let result = handle.await?;
                 event!(Level::INFO, "扫描了 {} 个 ip", result.len());

@@ -129,16 +129,18 @@ impl CoreDb {
 
         // 步骤2：删除这些IP（如果有数据）
         if !ips.is_empty() {
-            // 动态构建IN条件占位符
-            let placeholders = vec!["?"; ips.len()].join(",");
-            let delete_sql = format!("DELETE FROM src WHERE ip IN ({})", placeholders);
+            // 动态构建IN条件
+            let in_clause = ips
+                .iter()
+                .map(|ip| format!("'{}'", ip)) // 将每个IP用单引号包裹
+                .collect::<Vec<_>>()
+                .join(",");
 
-            // 转换参数类型
-            let params: Vec<&dyn rusqlite::ToSql> =
-                ips.iter().map(|ip| ip as &dyn rusqlite::ToSql).collect();
+            // 构建删除语句
+            let delete_sql = format!("DELETE FROM src WHERE ip IN ({})", in_clause);
 
             // 执行删除
-            tx.execute(&delete_sql, &params[..])?;
+            tx.execute(&delete_sql, [])?;
         }
 
         // 提交事务
@@ -231,7 +233,25 @@ impl CoreDb {
 
         for ip in ips.iter() {
             if let Err(e) = stmt.execute([&ip]) {
-                event!(Level::WARN, "插入 ip 失败: {:?}", e);
+                // println!("插入 {} 失败, {:?}", ip, e);
+                match e {
+                    rusqlite::Error::SqliteFailure(e, des) => match e.code {
+                        rusqlite::ErrorCode::ConstraintViolation => {
+                            if e.extended_code == 2067 {
+                                // println!("{} 已经存在", ip);
+                                continue;
+                            } else {
+                                return Err(rusqlite::Error::SqliteFailure(e, des));
+                            }
+                        }
+                        _ => {
+                            return Err(rusqlite::Error::SqliteFailure(e, des));
+                        }
+                    },
+                    e => {
+                        return Err(e);
+                    }
+                }
             }
         }
 
