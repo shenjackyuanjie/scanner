@@ -2,7 +2,7 @@ use clap::Parser;
 
 #[derive(Parser, Debug)]
 pub struct CliArg {
-    /// 线程数量
+    /// 线程数量 ( 建议开到 10+ 别太大 都是真线程 )
     #[arg(short = 't', long = "threads", default_value_t = 4)]
     pub threads: usize,
     /// 源站, 包含 https:// 或 http://
