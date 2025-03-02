@@ -56,6 +56,7 @@ pub async fn scan_ip(
     Ok((false, false))
 }
 
+/// 核心工作函数
 pub async fn work(args: CliArg) -> anyhow::Result<()> {
     let db = dbs::CoreDb::new(&args.db_path)?;
 
@@ -108,14 +109,15 @@ pub async fn work(args: CliArg) -> anyhow::Result<()> {
         let client = reqwest::Client::new();
         let res = client.get(&args.url).send().await?;
         let text = res.text().await?;
+        std::fs::write(&args.compare, text)?;
     } else if check_path.is_dir() {
         event!(Level::ERROR, "对比文件不能是目录");
         return Ok(());
     }
 
     let right_hash = {
-      let mut hasher = blake3::Hasher::new();
-        let _ = hasher.update(std::fs::read(check_path)?);
+        let mut hasher = blake3::Hasher::new();
+        let _ = hasher.update(&std::fs::read(check_path)?);
         hasher.finalize()
     };
 
@@ -137,26 +139,29 @@ pub async fn work(args: CliArg) -> anyhow::Result<()> {
             // 处理掉 http:// 或者 https://
             let root = root.split_once("//").unwrap().1;
             (root.to_string(), path.to_string())
-        },
+        }
         None => (args.url.clone(), "".to_string()),
     };
 
     if batch_size > todo_count {
-        for ip in db.get_n_ip(todo_count)? {
-            let ip: SocketAddr = match ip.parse() {
-                Ok(ip) => ip,
-                Err(e) => {
-                    event!(Level::ERROR, "解析 ip 地址失败: {:?}", e);
-                    continue;
-                }
-            }
-            match scan_ip(
-                ip,
-                root_url.clone(),
-                path.clone(),
-                right_hash,
-            ) {
-
+        let ips = db.get_all_ip()?;
+        let result = worker(&ips, root_url, path, right_hash).await;
+        db.update_ips(&result)?;
+    } else {
+        let mut pool = Vec::with_capacity(args.threads);
+        while db.count_src()? > 0 {
+            if pool.len() < args.threads {
+                let scan_ip = db.get_n_ip(args.max_ip_count.min(db.count_src()?))?;
+                let root_url = root_url.clone();
+                let path = path.clone();
+                let handle =
+                    tokio::spawn(async move { worker(&scan_ip, root_url, path, right_hash).await });
+                pool.push(handle);
+            } else {
+                let handle = pool.remove(0);
+                let result = handle.await?;
+                event!(Level::INFO, "扫描了 {} 个 ip", result.len());
+                db.update_ips(&result)?;
             }
         }
     }
@@ -164,4 +169,34 @@ pub async fn work(args: CliArg) -> anyhow::Result<()> {
     db.close();
 
     Ok(())
+}
+
+/// 工作线程
+pub async fn worker(
+    ips: &[String],
+    root_url: String,
+    path: String,
+    right_hash: Hash,
+) -> Vec<(String, bool, bool)> {
+    let mut result = Vec::new();
+
+    for ip in ips.iter() {
+        let socket: SocketAddr = match ip.parse() {
+            Ok(ip) => ip,
+            Err(e) => {
+                event!(Level::ERROR, "解析 ip 地址失败: {:?}", e);
+                continue;
+            }
+        };
+        match scan_ip(socket, root_url.clone(), path.clone(), right_hash).await {
+            Ok((https, http)) => {
+                result.push((ip.clone(), https, http));
+            }
+            Err(e) => {
+                event!(Level::WARN, "扫描 ip 失败: {:?}", e);
+            }
+        }
+    }
+
+    result
 }

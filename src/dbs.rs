@@ -131,8 +131,23 @@ impl CoreDb {
         Ok(ips)
     }
 
+    /// 获取所有的 ip
+    pub fn get_all_ip(&self) -> rusqlite::Result<Vec<String>> {
+        let mut stmt = self.db.prepare("SELECT ip FROM src")?;
+        let mut rows = stmt.query([])?;
+
+        let mut ips = Vec::new();
+        while let Some(row) = rows.next()? {
+            ips.push(row.get(0)?);
+        }
+
+        event!(Level::DEBUG, "获取到 {} 个 ip", ips.len());
+
+        Ok(ips)
+    }
+
     /// 添加一些失败的 ip
-    pub fn add_faild_ip(&self, ips: Vec<String>) -> rusqlite::Result<()> {
+    pub fn add_faild_ip(&self, ips: &[String]) -> rusqlite::Result<()> {
         let mut stmt = self.db.prepare("INSERT INTO faild (ip) VALUES (?)")?;
 
         for ip in ips.iter() {
@@ -145,7 +160,7 @@ impl CoreDb {
     }
 
     /// 添加一些成功的 ip
-    pub fn add_success_ip(&self, ips: Vec<(String, bool, bool)>) -> rusqlite::Result<()> {
+    pub fn add_success_ip(&self, ips: &[(String, bool, bool)]) -> rusqlite::Result<()> {
         let mut stmt = self
             .db
             .prepare("INSERT INTO success (ip, http_ok, https_ok) VALUES (?, ?, ?)")?;
@@ -156,6 +171,33 @@ impl CoreDb {
 
         event!(Level::DEBUG, "添加了 {} 个成功的 ip", ips.len());
 
+        Ok(())
+    }
+
+    /// 更新 ip
+    pub fn update_ip(&self, ip: &str, http_ok: bool, https_ok: bool) -> rusqlite::Result<()> {
+        if http_ok || https_ok {
+            self.add_success_ip(&[(ip.to_string(), http_ok, https_ok)])?;
+        } else {
+            self.add_faild_ip(&[ip.to_string()])?;
+        }
+        Ok(())
+    }
+
+    /// 更新一大堆 ip
+    pub fn update_ips(&self, ips: &[(String, bool, bool)]) -> rusqlite::Result<()> {
+        let success = ips
+            .iter()
+            .filter(|(_, http, https)| *http || *https)
+            .map(|(ip, a, b)| (ip.to_string(), *a, *b))
+            .collect::<Vec<_>>();
+        let faild = ips
+            .iter()
+            .filter(|(_, http, https)| !(*http || *https))
+            .map(|(ip, _, _)| ip.to_string())
+            .collect::<Vec<_>>();
+        self.add_faild_ip(&faild)?;
+        self.add_success_ip(&success)?;
         Ok(())
     }
 
