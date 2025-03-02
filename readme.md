@@ -18,3 +18,14 @@ Options:
   -w, --worker_interval <WORKER_INTERVAL>  每次 搜索 worker 启动间隔 (ms) [default: 200]
   -h, --help                               Print helpPrint help
 ```
+
+## 用途(至少作者的)
+
+扫描某个套了 Cloudflare 的服务器 ip
+
+> 其实我应该写一下自动从 xxx 获取 ip 的
+> 不过懒了, 就没写
+
+所以这玩意是支持 "分布式部署"的
+
+只要自己处理一下ip列表, 然后给每个节点分发就行
