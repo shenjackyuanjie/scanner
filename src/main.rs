@@ -2,6 +2,7 @@ use clap::Parser;
 
 mod cli;
 mod dbs;
+mod scan;
 
 fn main() {
     println!("Hello, world!");
@@ -27,6 +28,6 @@ fn main() {
 }
 
 async fn a_main(args: cli::CliArg) -> anyhow::Result<()> {
-    let db = dbs::CoreDb::new(&args.db_path)?;
+    scan::work(args).await?;
     Ok(())
 }

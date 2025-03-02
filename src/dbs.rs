@@ -1,10 +1,8 @@
-use std::rc::Rc;
-
 use tracing::{Level, event};
 
 #[derive(Debug)]
 pub struct CoreDb {
-    db: Rc<rusqlite::Connection>,
+    db: rusqlite::Connection,
 }
 
 /// 将 bool 转换为 i
@@ -12,11 +10,7 @@ pub struct CoreDb {
 /// true -> 1
 /// false -> 0
 pub fn bool_2_str(b: bool) -> &'static str {
-    if b {
-        "TRUE"
-    } else {
-        "FALSE"
-    }
+    if b { "TRUE" } else { "FALSE" }
 }
 
 /// 将 i 转换为 bool
@@ -32,9 +26,10 @@ impl CoreDb {
         let db = rusqlite::Connection::open(db_path)?;
 
         event!(Level::INFO, "已经连接到 {} 数据库", db_path);
-        let slf = Self { db: Rc::new(db) };
+        let slf = Self { db };
 
         slf.check_table()?;
+        slf.check_src()?;
 
         Ok(slf)
     }
@@ -60,7 +55,8 @@ impl CoreDb {
             [],
         )?;
         // index for src
-        self.db.execute("
+        self.db.execute(
+            "
             CREATE UNIQUE INDEX IF NOT EXISTS src_ip_index
             ON src (ip)",
             [],
@@ -150,7 +146,9 @@ impl CoreDb {
 
     /// 添加一些成功的 ip
     pub fn add_success_ip(&self, ips: Vec<(String, bool, bool)>) -> rusqlite::Result<()> {
-        let mut stmt = self.db.prepare("INSERT INTO success (ip, http_ok, https_ok) VALUES (?, ?, ?)")?;
+        let mut stmt = self
+            .db
+            .prepare("INSERT INTO success (ip, http_ok, https_ok) VALUES (?, ?, ?)")?;
 
         for ip in ips.iter() {
             stmt.execute([&ip.0, bool_2_str(ip.1), bool_2_str(ip.2)])?;
@@ -163,7 +161,7 @@ impl CoreDb {
 
     /// 导入 ip
     pub fn import_ips(&self, ips: Vec<String>) -> rusqlite::Result<()> {
-        let mut stmt = self.db.prepare("INSERT INTO src (ip) VALUES (?)")?;
+        let mut stmt = self.db.prepare("INSERT INTO src (ip) VALUES (?) ")?;
 
         for ip in ips.iter() {
             stmt.execute([&ip])?;
@@ -176,7 +174,9 @@ impl CoreDb {
 
     /// 导出成功的 ip
     pub fn export_success(&self) -> rusqlite::Result<(Vec<String>, Vec<String>)> {
-        let mut stmt = self.db.prepare("SELECT ip, http_ok, https_ok FROM success")?;
+        let mut stmt = self
+            .db
+            .prepare("SELECT ip, http_ok, https_ok FROM success")?;
         let mut rows = stmt.query([])?;
 
         let mut http_ips = Vec::new();
@@ -198,5 +198,18 @@ impl CoreDb {
         event!(Level::DEBUG, "导出了 {} 个 http 成功的 ip", http_ips.len());
 
         Ok((http_ips, https_ips))
+    }
+
+    pub fn count_src(&self) -> rusqlite::Result<usize> {
+        let mut stmt = self.db.prepare("SELECT COUNT(*) FROM src")?;
+        let mut rows = stmt.query([])?;
+
+        let count: i64 = rows.next()?.unwrap().get(0)?;
+
+        Ok(count as usize)
+    }
+
+    pub fn close(self) {
+        self.db.close().expect("db 关闭失败?");
     }
 }
