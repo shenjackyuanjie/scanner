@@ -11,7 +11,7 @@ pub struct CoreDb {
 ///
 /// true -> 1
 /// false -> 0
-pub fn bool_2_str(b: bool) -> &str {
+pub fn bool_2_str(b: bool) -> &'static str {
     if b {
         "TRUE"
     } else {
@@ -49,29 +49,49 @@ impl CoreDb {
     ///
     /// success table: 存储成功的 ip 信息
     /// ip: ip 地址 (主键) (TEXT)
-    /// http_ok: http 请求是否成功 (INTEGER) (80 端口)
-    /// https_ok: https 请求是否成功 (INTEGER) (443 端口)
+    /// http_ok: http 请求是否成功 (BOOLEAN) (80 端口)
+    /// https_ok: https 请求是否成功 (BOOLEAN) (443 端口)
     pub fn check_table(&self) -> rusqlite::Result<()> {
+        // src
         self.db.execute(
             "CREATE TABLE IF NOT EXISTS src (
-                ip TEXT PRIMARY KEY
+                ip TEXT PRIMARY KEY ON CONFLICT REPLACE
             )",
             [],
         )?;
+        // index for src
+        self.db.execute("
+            CREATE UNIQUE INDEX IF NOT EXISTS src_ip_index
+            ON src (ip)",
+            [],
+        )?;
 
+        // faild
         self.db.execute(
             "CREATE TABLE IF NOT EXISTS faild (
-                ip TEXT PRIMARY KEY
+                ip TEXT PRIMARY KEY ON CONFLICT REPLACE
             )",
+            [],
+        )?;
+        // index for faild
+        self.db.execute(
+            "CREATE UNIQUE INDEX IF NOT EXISTS faild_ip_index
+            ON faild (ip)",
             [],
         )?;
 
         self.db.execute(
             "CREATE TABLE IF NOT EXISTS success (
-                ip TEXT PRIMARY KEY,
-                http_ok INTEGER,
-                https_ok INTEGER
+                ip TEXT PRIMARY KEY ON CONFLICT REPLACE,
+                http_ok BOOLEAN NOT NULL,
+                https_ok BOOLEAN NOT NULL
             )",
+            [],
+        )?;
+        // index for success
+        self.db.execute(
+            "CREATE UNIQUE INDEX IF NOT EXISTS success_ip_index
+            ON success (ip)",
             [],
         )?;
 
@@ -128,6 +148,7 @@ impl CoreDb {
         Ok(())
     }
 
+    /// 添加一些成功的 ip
     pub fn add_success_ip(&self, ips: Vec<(String, bool, bool)>) -> rusqlite::Result<()> {
         let mut stmt = self.db.prepare("INSERT INTO success (ip, http_ok, https_ok) VALUES (?, ?, ?)")?;
 
@@ -138,5 +159,44 @@ impl CoreDb {
         event!(Level::DEBUG, "添加了 {} 个成功的 ip", ips.len());
 
         Ok(())
+    }
+
+    /// 导入 ip
+    pub fn import_ips(&self, ips: Vec<String>) -> rusqlite::Result<()> {
+        let mut stmt = self.db.prepare("INSERT INTO src (ip) VALUES (?)")?;
+
+        for ip in ips.iter() {
+            stmt.execute([&ip])?;
+        }
+
+        event!(Level::DEBUG, "添加了 {} 个 ip", ips.len());
+
+        Ok(())
+    }
+
+    /// 导出成功的 ip
+    pub fn export_success(&self) -> rusqlite::Result<(Vec<String>, Vec<String>)> {
+        let mut stmt = self.db.prepare("SELECT ip, http_ok, https_ok FROM success")?;
+        let mut rows = stmt.query([])?;
+
+        let mut http_ips = Vec::new();
+        let mut https_ips = Vec::new();
+
+        while let Some(row) = rows.next()? {
+            let ip: String = row.get(0)?;
+            let http_ok: bool = int_2_bool(row.get(1)?);
+            let https_ok: bool = int_2_bool(row.get(2)?);
+
+            if http_ok {
+                http_ips.push(ip.clone());
+            }
+            if https_ok {
+                https_ips.push(ip.clone());
+            }
+        }
+
+        event!(Level::DEBUG, "导出了 {} 个 http 成功的 ip", http_ips.len());
+
+        Ok((http_ips, https_ips))
     }
 }
