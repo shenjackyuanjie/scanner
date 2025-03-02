@@ -118,18 +118,32 @@ impl CoreDb {
     ///
     /// 从 src 表中获取 n 个 ip, 并将这 n 个 ip 从 src 表中删除
     pub fn get_n_ip(&self, n: usize) -> rusqlite::Result<Vec<String>> {
-        let mut stmt = self.db.prepare("SELECT ip FROM src LIMIT ?")?;
-
+        // 开启事务
         let tx = self.db.unchecked_transaction()?;
-        let mut rows = stmt.query([&n])?;
 
-        let mut ips = Vec::with_capacity(n);
-        while let Some(row) = rows.next()? {
-            ips.push(row.get(0)?);
+        // 步骤1：查询待删除的IP
+        let mut select_stmt = self.db.prepare("SELECT ip FROM src LIMIT ?")?;
+        let ips: Vec<String> = select_stmt
+            .query_map([n], |row| row.get(0))?
+            .collect::<Result<_, _>>()?;
+
+        // 步骤2：删除这些IP（如果有数据）
+        if !ips.is_empty() {
+            // 动态构建IN条件占位符
+            let placeholders = vec!["?"; ips.len()].join(",");
+            let delete_sql = format!("DELETE FROM src WHERE ip IN ({})", placeholders);
+
+            // 转换参数类型
+            let params: Vec<&dyn rusqlite::ToSql> =
+                ips.iter().map(|ip| ip as &dyn rusqlite::ToSql).collect();
+
+            // 执行删除
+            tx.execute(&delete_sql, &params[..])?;
         }
 
+        // 提交事务
         tx.commit()?;
-        event!(Level::DEBUG, "获取到 {} 个 ip", ips.len());
+        event!(Level::DEBUG, "获取并删除了 {} 个 ip", ips.len());
 
         Ok(ips)
     }
