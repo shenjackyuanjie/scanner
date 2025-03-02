@@ -14,4 +14,7 @@ pub struct CliArg {
     /// 数据库文件路径
     #[arg(short = 'd', long = "db_path", default_value = "main.sqlite")]
     pub db_path: String,
+    /// 是否开启 debug
+    #[arg(short = 'v', long = "verbose")]
+    pub verbose: bool,
 }

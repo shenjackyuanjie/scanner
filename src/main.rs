@@ -8,6 +8,16 @@ fn main() {
 
     let args = cli::CliArg::parse();
 
+    tracing_subscriber::fmt()
+        .with_max_level({
+            if args.verbose {
+                tracing::Level::DEBUG
+            } else {
+                tracing::Level::INFO
+            }
+        })
+        .init();
+
     let rt = tokio::runtime::Builder::new_multi_thread()
         .worker_threads(args.threads)
         .build()
