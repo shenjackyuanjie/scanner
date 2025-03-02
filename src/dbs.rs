@@ -7,6 +7,26 @@ pub struct CoreDb {
     db: Rc<rusqlite::Connection>,
 }
 
+/// 将 bool 转换为 i
+///
+/// true -> 1
+/// false -> 0
+pub fn bool_2_str(b: bool) -> &str {
+    if b {
+        "TRUE"
+    } else {
+        "FALSE"
+    }
+}
+
+/// 将 i 转换为 bool
+///
+/// i == 0 -> false
+/// else -> true
+pub fn int_2_bool(i: i32) -> bool {
+    !(i == 0)
+}
+
 impl CoreDb {
     pub fn new(db_path: &str) -> rusqlite::Result<Self> {
         let db = rusqlite::Connection::open(db_path)?;
@@ -29,8 +49,8 @@ impl CoreDb {
     ///
     /// success table: 存储成功的 ip 信息
     /// ip: ip 地址 (主键) (TEXT)
-    /// http_ok: http 请求是否成功 (BOOLEAN) (80 端口)
-    /// https_ok: https 请求是否成功 (BOOLEAN) (443 端口)
+    /// http_ok: http 请求是否成功 (INTEGER) (80 端口)
+    /// https_ok: https 请求是否成功 (INTEGER) (443 端口)
     pub fn check_table(&self) -> rusqlite::Result<()> {
         self.db.execute(
             "CREATE TABLE IF NOT EXISTS src (
@@ -49,8 +69,8 @@ impl CoreDb {
         self.db.execute(
             "CREATE TABLE IF NOT EXISTS success (
                 ip TEXT PRIMARY KEY,
-                http_ok BOOLEAN,
-                https_ok BOOLEAN
+                http_ok INTEGER,
+                https_ok INTEGER
             )",
             [],
         )?;
@@ -99,11 +119,23 @@ impl CoreDb {
     pub fn add_faild_ip(&self, ips: Vec<String>) -> rusqlite::Result<()> {
         let mut stmt = self.db.prepare("INSERT INTO faild (ip) VALUES (?)")?;
 
-        for ip in ips {
+        for ip in ips.iter() {
             stmt.execute([&ip])?;
         }
 
         event!(Level::DEBUG, "添加了 {} 个失败的 ip", ips.len());
+
+        Ok(())
+    }
+
+    pub fn add_success_ip(&self, ips: Vec<(String, bool, bool)>) -> rusqlite::Result<()> {
+        let mut stmt = self.db.prepare("INSERT INTO success (ip, http_ok, https_ok) VALUES (?, ?, ?)")?;
+
+        for ip in ips.iter() {
+            stmt.execute([&ip.0, bool_2_str(ip.1), bool_2_str(ip.2)])?;
+        }
+
+        event!(Level::DEBUG, "添加了 {} 个成功的 ip", ips.len());
 
         Ok(())
     }
