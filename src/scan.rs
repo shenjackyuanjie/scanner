@@ -171,13 +171,15 @@ pub async fn work(args: CliArg) -> anyhow::Result<()> {
                 });
                 worker_count += 1;
                 pool.push(handle);
+                let todo_count = db.count_src()?;
                 event!(
                     Level::INFO,
-                    "开始 worker {} (共计 {}) 进度: {:>2.3}%",
+                    "开始 worker {} (共计 {}) 进度: {:>2.3}% ({}/{})",
                     worker_count,
                     pool.len(),
-                    (worker_count as f64 / (db.count_src()? as f64 / args.max_ip_count as f64))
-                        * 100.0
+                    (worker_count as f64 / (todo_count as f64 / args.max_ip_count as f64)) * 100.0,
+                    worker_count,
+                    (todo_count / args.max_ip_count)
                 );
                 tokio::time::sleep(Duration::from_millis(args.worker_interval)).await;
             } else {
