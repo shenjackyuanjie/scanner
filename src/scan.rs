@@ -57,7 +57,6 @@ pub async fn scan_ip(
             }
         }
     }
-    println!("{} faild", ip);
     Ok((false, false))
 }
 
@@ -171,14 +170,16 @@ pub async fn work(args: CliArg) -> anyhow::Result<()> {
                     worker(&scan_ip, root_url, path, right_hash, timeout).await
                 });
                 worker_count += 1;
+                pool.push(handle);
                 event!(
                     Level::INFO,
-                    "开始 worker {} (共计 {})",
+                    "开始 worker {} (共计 {}) 进度: {:>2.3}%",
                     worker_count,
-                    pool.len()
+                    pool.len(),
+                    (worker_count as f64 / (db.count_src()? as f64 / args.max_ip_count as f64))
+                        * 100.0
                 );
-                pool.push(handle);
-                tokio::time::sleep(Duration::from_millis(100)).await;
+                tokio::time::sleep(Duration::from_millis(args.worker_interval)).await;
             } else {
                 let handle = pool.remove(0);
                 let result = handle.await?;
@@ -194,10 +195,8 @@ pub async fn work(args: CliArg) -> anyhow::Result<()> {
                     let result = handle.await?;
                     event!(Level::INFO, "扫描了 {} 个 ip", result.len());
                     db.update_ips(&result)?;
+                    i = 0;
                 }
-            }
-            if i != 0 {
-                continue;
             }
         }
     }

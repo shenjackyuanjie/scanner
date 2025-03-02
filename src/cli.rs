@@ -26,4 +26,7 @@ pub struct CliArg {
     /// 超时时间 (默认 1s)
     #[arg(short = 'o', long = "timeout", default_value_t = 1)]
     pub timeout: u64,
+    /// 每次 搜索 worker 启动间隔 (ms)
+    #[arg(short = 'w', long = "worker_interval", default_value_t = 200)]
+    pub worker_interval: u64,
 }
