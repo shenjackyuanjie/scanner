@@ -62,6 +62,24 @@ pub async fn work(args: CliArg) -> anyhow::Result<()> {
 
     let before_add_count = db.count_src()?;
 
+    let check_path = Path::new(&args.compare);
+    if !check_path.exists() {
+        event!(Level::INFO, "对比文件不存在, 开始下载");
+        let client = reqwest::Client::new();
+        let res = client.get(&args.url).send().await?;
+        let text = res.text().await?;
+        std::fs::write(&args.compare, text)?;
+    } else if check_path.is_dir() {
+        event!(Level::ERROR, "对比文件不能是目录");
+        return Ok(());
+    }
+
+    let right_hash = {
+        let mut hasher = blake3::Hasher::new();
+        let _ = hasher.update(&std::fs::read(check_path)?);
+        hasher.finalize()
+    };
+
     // 先把数据加载进来
     let src_path = Path::new(&args.ip_path);
     // 检查是不是目录
@@ -79,6 +97,7 @@ pub async fn work(args: CliArg) -> anyhow::Result<()> {
                             .map(|d| d.trim().to_string())
                             .filter(|d| !d.is_empty())
                             .collect::<Vec<String>>();
+                        event!(Level::INFO, "正在导入 {} 个 ip", datas.len());
                         db.import_ips(datas)?;
                     }
                     Err(e) => {
@@ -103,23 +122,7 @@ pub async fn work(args: CliArg) -> anyhow::Result<()> {
         }
     }
 
-    let check_path = Path::new(&args.compare);
-    if !check_path.exists() {
-        event!(Level::INFO, "对比文件不存在, 开始下载");
-        let client = reqwest::Client::new();
-        let res = client.get(&args.url).send().await?;
-        let text = res.text().await?;
-        std::fs::write(&args.compare, text)?;
-    } else if check_path.is_dir() {
-        event!(Level::ERROR, "对比文件不能是目录");
-        return Ok(());
-    }
-
-    let right_hash = {
-        let mut hasher = blake3::Hasher::new();
-        let _ = hasher.update(&std::fs::read(check_path)?);
-        hasher.finalize()
-    };
+    event!(Level::INFO, "导入完成");
 
     db.check_src()?;
 

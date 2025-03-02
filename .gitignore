@@ -1,1 +1,5 @@
 /target
+/ips
+*.sqlite
+*.sqlite-journal
+check.src

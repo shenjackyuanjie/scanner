@@ -21,6 +21,7 @@ fn main() {
 
     let rt = tokio::runtime::Builder::new_multi_thread()
         .worker_threads(args.threads)
+        .enable_all()
         .build()
         .expect("tokio rt 构建失败");
 

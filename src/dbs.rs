@@ -206,10 +206,12 @@ impl CoreDb {
         let mut stmt = self.db.prepare("INSERT INTO src (ip) VALUES (?) ")?;
 
         for ip in ips.iter() {
-            stmt.execute([&ip])?;
+            if let Err(e) = stmt.execute([&ip]) {
+                event!(Level::WARN, "插入 ip 失败: {:?}", e);
+            }
         }
 
-        event!(Level::DEBUG, "添加了 {} 个 ip", ips.len());
+        event!(Level::INFO, "添加了 {} 个 ip", ips.len());
 
         Ok(())
     }
