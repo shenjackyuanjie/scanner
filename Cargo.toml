@@ -1,0 +1,16 @@
+[package]
+name = "scans"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+anyhow = "1.0.96"
+blake3 = "1.6.1"
+clap = { version = "4.5.31", features = ["derive"] }
+reqwest = { version = "0.12.12", features = [
+    "rustls-tls",
+], default-features = false }
+rusqlite = { version = "0.33.0", features = ["bundled"] }
+tokio = { version = "1.43.0", features = ["full"] }
+tracing = "0.1.41"
+tracing-subscriber = "0.3.19"
