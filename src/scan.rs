@@ -171,7 +171,6 @@ pub async fn work(args: CliArg) -> anyhow::Result<()> {
                 });
                 worker_count += 1;
                 pool.push(handle);
-                let todo_count = db.count_src()?;
                 event!(
                     Level::INFO,
                     "开始 worker {} (共计 {}) 进度: {:>2.3}% ({}/{})",
